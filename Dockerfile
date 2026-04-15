@@ -1,135 +1,57 @@
-FROM ubuntu:24.04
+FROM node:22-bookworm-slim
 
-# =========================
-# Base environment
-# =========================
+# ---------- build args ----------
+ARG OPENCODE_VERSION=1.4.3
+
+# ---------- base env ----------
 ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=UTC \
-    LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
+    HOME=/home/node \
+    NPM_CONFIG_PREFIX=/opt/npm-global \
+    PATH=/opt/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# =========================
-# Build arguments
-# =========================
-ARG USERNAME=dev
-ARG UID=1000
-ARG GID=1000
-
-ARG INSTALL_BRAVE=1
-ARG INSTALL_TAILSCALE=1
-ARG INSTALL_AGENT_BROWSER=1
-ARG INSTALL_PLAYWRIGHT=1
-ARG DOWNLOAD_BROWSERS=0
-
-# =========================
-# Base packages
-# =========================
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    curl \
-    gnupg \
-    tzdata \
-    sudo \
-    git \
-    vim \
-    jq \
-    ffmpeg \
-    python3 \
-    python3-pip \
-    python3-venv \
-    pipx \
+# ---------- OS packages (keep minimal but dev-capable) ----------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg \
+      dumb-init \
+      git jq vim \
+      python3 python3-venv python3-pip \
+      build-essential pkg-config \
+      ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# =========================
-# GitHub CLI (gh)
-# =========================
+# ---------- gh CLI ----------
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-      > /etc/apt/sources.list.d/github-cli.list && \
-    apt-get update && apt-get install -y gh && \
-    rm -rf /var/lib/apt/lists/*
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
 
-# =========================
-# Node.js LTS
-# =========================
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
+# ---------- npm global tools (installed once) ----------
+# agent-browser install/download happens at runtime: `agent-browser install` [4](https://agent-browser.dev/installation)
+# Playwright OS deps installer: `npx playwright install-deps chromium` [2](https://zeabur.com/docs/en-US/deploy/methods/custom-docker-image)[3](https://playwright.dev/docs/browsers)
+RUN mkdir -p /opt/npm-global && chown -R node:node /opt/npm-global \
+    && npm install -g \
+        opencode-ai@${OPENCODE_VERSION} \
+        agent-browser \
+        playwright
 
-# =========================
-# Google Workspace CLI
-# =========================
-RUN npm install -g @googleworkspace/cli
+# Install Playwright system dependencies now (smaller than downloading browsers)
+RUN npx playwright install-deps chromium
 
-# =========================
-# yt-dlp
-# =========================
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
-      -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
+# ---------- workspace (for Zeabur volume) ----------
+RUN mkdir -p /workspace \
+    && chown -R node:node /workspace
 
-# =========================
-# OPTIONAL: Brave
-# =========================
-RUN if [ "$INSTALL_BRAVE" = "1" ]; then \
-      curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg && \
-      curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources \
-        https://brave-browser-apt-release.s3.brave.com/brave-browser.sources && \
-      apt-get update && apt-get install -y brave-browser && \
-      rm -rf /var/lib/apt/lists/* ; \
-    fi
-
-# =========================
-# OPTIONAL: Tailscale (install only)
-# =========================
-RUN if [ "$INSTALL_TAILSCALE" = "1" ]; then \
-      curl -fsSL https://tailscale.com/install.sh | sh ; \
-    fi
-
-# =========================
-# agent-browser (no browser download)
-# =========================
-RUN if [ "$INSTALL_AGENT_BROWSER" = "1" ]; then \
-      npm install -g agent-browser ; \
-      if [ "$DOWNLOAD_BROWSERS" = "1" ]; then \
-        agent-browser install --with-deps ; \
-      fi ; \
-    fi
-
-# =========================
-# Playwright (CLI only)
-# =========================
-RUN if [ "$INSTALL_PLAYWRIGHT" = "1" ]; then \
-      npm install -g playwright ; \
-      if [ "$DOWNLOAD_BROWSERS" = "1" ]; then \
-        npx playwright install-deps && npx playwright install ; \
-      fi ; \
-    fi
-
-# =========================
-# ✅ SAFE USER CREATION (FIXES GID 1000 ERROR)
-# =========================
-RUN set -eux; \
-    if ! getent group "${GID}" >/dev/null; then \
-        groupadd --gid "${GID}" "${USERNAME}"; \
-    else \
-        echo "Group with GID ${GID} already exists"; \
-    fi; \
-    if ! id -u "${USERNAME}" >/dev/null 2>&1; then \
-        useradd --uid "${UID}" --gid "${GID}" -m -s /bin/bash "${USERNAME}"; \
-    fi; \
-    echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME}; \
-    chmod 0440 /etc/sudoers.d/${USERNAME}
-
-# =========================
-# Rust (per-user)
-# =========================
-USER ${USERNAME}
+# ---------- rust toolchain (per-user) ----------
+USER node
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH=/home/node/.cargo/bin:${PATH}
 
-ENV PATH="/home/${USERNAME}/.cargo/bin:${PATH}"
-WORKDIR /home/${USERNAME}
+WORKDIR /workspace
 
-CMD ["/bin/bash"]
+# dumb-init as PID 1 for proper signal forwarding & zombie reaping [8](https://github.com/Yelp/dumb-init)[9](https://deepwiki.com/Yelp/dumb-init/2-usage)
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["bash", "-lc", "sleep infinity"]
