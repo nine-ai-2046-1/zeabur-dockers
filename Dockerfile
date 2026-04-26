@@ -51,4 +51,5 @@ WORKDIR ${KIMAKI_DIR}
 USER ${USER}
 # entrypoint via tini (entrypoint.sh 由你 repo 提供)
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
-CMD ["start"]
+# CMD ["start"]
+CMD ["sleep", "infinity"]
