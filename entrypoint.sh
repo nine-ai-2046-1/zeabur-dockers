@@ -25,7 +25,7 @@ case "${1:-start}" in
     echo "Starting kimaki in ${KIMAKI_DIR} (data dir: ${DATA_DIR})"
     # Use npx to run kimaki; use -y to auto confirm
     # exec so process replaces shell (signal handling)
-    exec npx -y kimaki@latest --data-dir "${DATA_DIR}" --auto-restart
+    # exec npx -y kimaki@latest --data-dir "${DATA_DIR}" --auto-restart
     ;;
   bash|sh)
     exec /bin/bash
