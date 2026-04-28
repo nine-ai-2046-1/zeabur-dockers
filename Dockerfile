@@ -25,7 +25,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && apt-get update && apt-get install -y gh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @opencode-ai/cli
+RUN npm i -g opencode-ai
 
 RUN mkdir -p /home/node && chown -R root:root /home/node && chmod 755 /home/node
 
@@ -44,6 +44,8 @@ RUN useradd -m -s /bin/bash opencode 2>/dev/null || true
 
 ENV OPENCODE_HOME=/home/node NPM_CONFIG_PREFIX=/home/node CARGO_HOME=/home/node/.cargo
 
-WORKDIR /workspace
 
-CMD ["/bin/bash", "-c", "echo ready && exec /bin/bash"]
+RUN mkdir -p /home/node/kimaki_workplace
+WORKDIR /home/node/kimaki_workplace
+ENTRYPOINT ["sh", "-c"]
+CMD ["KIMAKI_BOT_TOKEN=\"${KIMAKI_BOT_TOKEN}\" npx -y kimaki@latest"]
