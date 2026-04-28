@@ -25,7 +25,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && apt-get update && apt-get install -y gh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g opencode
+RUN npm install -g @opencode-ai/cli
 
 RUN mkdir -p /home/node && chown -R root:root /home/node && chmod 755 /home/node
 
